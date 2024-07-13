@@ -1,0 +1,17 @@
+# ignore MacOS .DS_Store file(s)
+.DS_Store
+
+# ignore any .env environment files
+*.env
+
+# ignore any local artifacts
+*.pdf
+*.csv
+*.json
+*.xlsx
+*.sqlite
+*.sqlite3
+!/notebooks/*.sqlite3
+*.db
+*.txt
+!requirements.txt
