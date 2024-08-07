@@ -1,10 +1,11 @@
+from tkinter import Image
 import cv2
 import argparse
 import pytesseract
 import numpy as np
 import sqlite3
 import re
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path, convert_from_bytes
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 from typing import List, Dict
@@ -72,27 +73,31 @@ def process_image_cells(image) -> list[str]:
     return row_texts
 
 
-def read_pdf(input):
-    print(f"Processing PDF file: {input}\n" + "=" * (len(input) + 21))
-    images = convert_from_path(input)
-    all_row_texts = []
-
+def process_images(images : List[Image]) -> list[str]:
+    row_texts = []
     for image in tqdm(images, desc="Reading PDF pages..."):
         image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         row_texts = process_image_cells(image_cv)
-        all_row_texts.extend(row_texts)
+        row_texts.extend(row_texts)
+    return row_texts
 
-    return all_row_texts
+def read_pdf_path(input):
+    print(f"Processing PDF file: {input}\n" + "=" * (len(input) + 21))
+    return process_images(convert_from_path(input))
 
+def read_pdf_bytes(input):
+    print(f"Processing {len(input)} bytes of PDF data\n")
+    return process_images(convert_from_bytes(input))
 
 class SectionParser(ABC):
-    def __init__(self, file_path: str):
-        self.images = convert_from_path(file_path)
-        self.row_texts = [
-            row
-            for row in read_pdf(file_path)
-            if len(row) >= 4 and row[0].strip().upper() != "DATE"
-        ]
+    def __init__(self, file_path: str = None, file_bytes : bytes = None):
+        if any([file_path, file_bytes]):
+            self.images = convert_from_bytes(file_path) if file_bytes else convert_from_path(file_bytes)
+            self.row_texts = [
+                    row
+                    for row in (read_pdf_bytes(file_path) if file_bytes else read_pdf_path(file_path))
+                    if len(row) >= 4 and row[0].strip().upper() != "DATE"
+            ]
         return
 
     @abstractmethod
@@ -155,7 +160,6 @@ class ContributionsOver250Parser(SectionParser):
 
         name_regex = r"Name: (.*?)[\n\s]+(?:Mailing )?Address:"
         name_match = re.search(name_regex, row_text[1], flags=re.DOTALL)
-        name = name_match.group(1).replace("\n", " ").strip() if name_match else ""
         if name_match:
             row_text[1] = (
                 row_text[1][: name_match.start(1) - 6].strip()
@@ -192,20 +196,19 @@ class ContributionsOver250Parser(SectionParser):
             emp_match.group(1).replace("\n", "").strip() if emp_match else ""
         )
 
-        election_type = row_text[2] if row_text[2] in ["Primary", "General"] else ""
         amount = (
             row_text[-1].replace("$", "").replace(",", "")
-            if re.match(r"\$[\d,.]+", row_text[-1])
+            if re.match(r"\$[\d,.]+", str(row_text[-1]))
             else "0"
         )
 
         return {
             "date": date,
-            "name": name,
+            "name": name_match.group(1).replace("\n", " ").strip() if name_match else "",
             "address": address,
             "mailing_address": mailing_address if mailing_address else None,
             "employer_occupation": employer_occupation if employer_occupation else None,
-            "election_type": election_type,
+            "election_type": row_text[2] if row_text[2] in ["Primary", "General"] else "",
             "amount": amount,
         }
 
