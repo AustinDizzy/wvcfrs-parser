@@ -5,6 +5,7 @@
 *.env
 
 # ignore any local artifacts
+__pycache__
 *.pdf
 *.csv
 *.json
